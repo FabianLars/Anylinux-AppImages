@@ -383,11 +383,11 @@ chmod +x "$OUTPATH"/"$OUTNAME"
 
 # make a appinfo file next to the artifact, this can be used for
 # later getting info when making a github release
-echo "
-X-AppImage-Name=$APPNAME
-X-AppImage-Version=${VERSION:-UNKNOWN}
-X-AppImage-Arch=$APPIMAGE_ARCH
-" > "$OUTPATH"/appinfo
+# echo "
+# X-AppImage-Name=$APPNAME
+# X-AppImage-Version=${VERSION:-UNKNOWN}
+# X-AppImage-Arch=$APPIMAGE_ARCH
+# " > "$OUTPATH"/appinfo
 
 _echo "------------------------------------------------------------"
 _echo "All done! AppImage at: $OUTPATH/$OUTNAME"
