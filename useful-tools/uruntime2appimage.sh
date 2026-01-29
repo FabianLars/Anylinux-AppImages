@@ -247,9 +247,11 @@ if [ -z "$UPINFO" ]; then
 	fi
 fi
 
-if ! command -v zsyncmake 1>/dev/null; then
-	>&2 echo "ERROR: Missing dependency zsyncmake"
-	exit 1
+if [ -z "$UPINFO" ]; then
+	if ! command -v zsyncmake 1>/dev/null; then
+		>&2 echo "ERROR: Missing dependency zsyncmake"
+		exit 1
+	fi
 fi
 
 if command -v mkdwarfs 1>/dev/null; then
