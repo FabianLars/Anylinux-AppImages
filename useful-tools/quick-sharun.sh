@@ -400,6 +400,9 @@ _determine_what_to_deploy() {
 				*libMagick*.so*)
 					DEPLOY_IMAGEMAGICK=${DEPLOY_IMAGEMAGICK:-1}
 					;;
+				*libImlib2.so*)
+					DEPLOY_IMLIB2=${DEPLOY_IMLIB2:-1}
+					;;
 				*libgegl*.so*)
 					DEPLOY_GEGL=${DEPLOY_GEGL:-1}
 					;;
@@ -714,6 +717,56 @@ _make_deployment_array() {
 		set -- "$@" "$LIB_DIR"/libMagick*.so*
 		if b=$(command -v magick);  then set -- "$@" "$b"; fi
 		if b=$(command -v convert); then set -- "$@" "$b"; fi
+		# imagemagick optionally requires potrace to convert png to svg
+		if b=$(command -v potrace); then set -- "$@" "$b"; fi
+
+		magickdir=$(echo "$LIB_DIR"/ImageMagick*)
+		ADD_DIR="
+			$ADD_DIR
+			$magickdir
+		"
+	fi
+	if [ "$DEPLOY_IMLIB2" = 1 ]; then
+		_echo "* Deploying Imlib2"
+		set -- "$@" \
+			"$LIB_DIR"/libImlib2.so*    \
+			"$LIB_DIR"/imlib2/filters/* \
+			"$LIB_DIR"/imlib2/loaders/*
+
+		# TODO upstream to sharun
+		echo 'IMLIB2_FILTER_PATH=${SHARUN_DIR}/lib/imlib2/filters' >> "$APPENV"
+		echo 'IMLIB2_LOADER_PATH=${SHARUN_DIR}/lib/imlib2/loaders' >> "$APPENV"
+
+		# Setting IMLIB2_FILTER_PATH and IMLIB2_LOADER_PATH is good
+		# enough to make imlib2 relocatable, however there is one specific
+		# loader xpm.so that reads a file in /usr/share/imlib2/rgb.txt
+		# there is no env variable to relocate this file,
+		# so we will have resort to binary patching later on for now
+
+		# # # # # # # # # # # # # # # # # # # # # # # # # # #
+		# TODO: attempt to get upstream to adopt this patch #
+		# # # # # # # # # # # # # # # # # # # # # # # # # # #
+		#diff --git a/src/modules/loaders/loader_xpm.c b/src/modules/loaders/loader_xpm.c
+		#index e38493c..02c5d91 100644
+		#--- a/src/modules/loaders/loader_xpm.c
+		#+++ b/src/modules/loaders/loader_xpm.c
+		#@@ -89,6 +89,16 @@ xpm_parse_color(const char *color)
+		#     }
+		#
+		#     /* look in rgb txt database */
+		#+    if (!rgb_txt)
+		#+    {
+		#+        const char *data_dir = getenv("IMLIB2_DATADIR_PATH");
+		#+        if (data_dir)
+		#+        {
+		#+            char path[4096];
+		#+            snprintf(path, sizeof(path), "%s/rgb.txt", data_dir);
+		#+            rgb_txt = fopen(path, "r");
+		#+        }
+		#+    }
+		#     if (!rgb_txt)
+		#         rgb_txt = fopen(PACKAGE_DATA_DIR "/rgb.txt", "r");
+		#     if (!rgb_txt)
 	fi
 	if [ "$DEPLOY_SYS_PYTHON" = 1 ]; then
 		if pythonbin=$(command -v python); then
@@ -775,6 +828,8 @@ _make_deployment_array() {
 			"$LIB_DIR"/libXcursor.so*        \
 			"$LIB_DIR"/libxcb-dri*.so*       \
 			"$LIB_DIR"/libxcb-glx.so*        \
+			"$LIB_DIR"/libxcb-ewmh.so*       \
+			"$LIB_DIR"/libxcb-icccm.so*      \
 			"$LIB_DIR"/libxkbcommon.so*      \
 			"$LIB_DIR"/libxkbcommon-x11.so*  \
 			"$LIB_DIR"/libXext.so*           \
@@ -1692,11 +1747,6 @@ for lib do case "$lib" in
 	*libgimpwidgets*)
 		_patch_away_usr_share_dir "$lib" || continue
 		;;
-	*libMagick*.so*)
-		# MAGICK_HOME only works on portable builds of imagemagick
-		# so we will have to patch it manually instead
-		_patch_away_usr_lib_dir "$lib" || continue
-		;;
 	*libmlt*.so*)
 		_patch_away_usr_lib_dir "$lib" || continue
 		_patch_away_usr_share_dir "$lib" || continue
@@ -1762,6 +1812,15 @@ for lib do case "$lib" in
 			sed -i -e 's|libdecor-0.so.0|fuck-gnome.so.X|g' "$lib"
 		fi
 		;;
+	*/xpm.so)
+		f=/usr/share/imlib2/rgb.txt
+		if [ -f "$f" ]; then
+			mkdir -p "$APPDIR"/share/imlib2
+			cp -v "$f" "$APPDIR"/share/imlib2
+			_patch_away_usr_share_dir "$lib" || continue
+			_echo "Copied and patched imlib2 xpm loader"
+		fi
+		;;
 	esac
 done
 
@@ -1770,22 +1829,24 @@ topleveldirs=$(find "$APPDIR"/shared/lib/ -maxdepth 1  -type d | sed 's|/.*/||')
 for dir in $topleveldirs; do
 	# skip directories we already handle here on in sharun
 	case "$dir" in
-		alsa-lib   |\
-		dri        |\
-		gbm        |\
-		gconv      |\
-		gdk-pixbuf*|\
-		gio        |\
-		gtk*       |\
-		gstreamer* |\
-		gvfs       |\
-		libproxy   |\
-		locale     |\
-		pipewire*  |\
-		pulseaudio |\
-		qt*        |\
-		spa*       |\
-		vdpau      )
+		alsa-lib    |\
+		dri         |\
+		gbm         |\
+		gconv       |\
+		gdk-pixbuf* |\
+		gio         |\
+		gtk*        |\
+		gstreamer*  |\
+		gvfs        |\
+		ImageMagick*|\
+		imlib2      |\
+		libproxy    |\
+		locale      |\
+		pipewire*   |\
+		pulseaudio  |\
+		qt*         |\
+		spa*        |\
+		vdpau       )
 			continue
 			;;
 	esac
@@ -1878,10 +1939,49 @@ if [ "$DEPLOY_FLUTTER" = 1 ]; then
 fi
 if [ "$DEPLOY_IMAGEMAGICK" = 1 ]; then
 	mkdir -p "$APPDIR"/shared/lib  "$APPDIR"/etc
-	cp -r "$LIB_DIR"/ImageMagick-* "$APPDIR"/shared/lib
-	cp -r /etc/ImageMagick-*       "$APPDIR"/etc/ImageMagick
+	cp -rv /etc/ImageMagick-* "$APPDIR"/etc
+
+	# we can copy /usr/share/ImageMagick to the AppDir and set MAGICK_CONFIGURE_PATH
+	# to include both the etc/ImageMagick and share/ImageMagick directory
+	# but it is simpler to instead have all the config files in a single location
+	# imagemagick will load them all regardless
+	set -- /usr/share/ImageMagick-*/*.xml
+	if [ -f "$1" ]; then
+		cp -rv /usr/share/ImageMagick-*/*.xml "$APPDIR"/etc/ImageMagick*
+	fi
+	# there is also a configuration file in libdir
+	set -- "$LIB_DIR"/ImageMagick-*/config*/configure.xml
+	if [ -f "$1" ]; then
+		cp -v "$1" "$APPDIR"/etc/ImageMagick*
+	fi
+
+	# MAGICK_HOME is all that needs to be set
 	echo 'MAGICK_HOME=${SHARUN_DIR}' >> "$APPENV"
-	echo 'MAGICK_CONFIGURE_PATH=${SHARUN_DIR}/etc/ImageMagick' >> "$APPENV"
+	# however MAGICK_HOME only works when compiled with a specific flag
+	# we can still make this relocatable by setting these other env variables
+	# which will always work even when not compiled with MAGICK_HOME support
+	(
+		cd "$APPDIR"
+		set -- shared/lib/ImageMagick-*/modules*/coders
+		if [ -d "$1" ]; then
+			echo "MAGICK_CODER_MODULE_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
+		fi
+		set -- shared/lib/ImageMagick-*/modules*/filters
+		if [ -d "$1" ]; then
+			# checking the code it seems that MAGICK_FILTER_MODULE_PATH
+			# is NOT USED in the code and seems to be an error!!! the variable
+			# that modules.c references is MAGICK_CODER_FILTER_PATH
+			# we will still be set both just in case
+			echo "MAGICK_CODER_FILTER_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
+			echo "MAGICK_FILTER_MODULE_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
+
+		fi
+		set -- etc/ImageMagick*
+		if [ -d "$1" ]; then
+			echo "MAGICK_CONFIGURE_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
+		fi
+	)
+
 	_echo "* Copied ImageMagick directories"
 fi
 if [ "$DEPLOY_GEGL" = 1 ]; then
@@ -1963,6 +2063,12 @@ sed -i \
 	"$APPDIR"/AppRun
 
 chmod +x "$APPDIR"/AppRun "$APPDIR"/bin/*.hook "$APPDIR"/bin/notify 2>/dev/null || :
+
+# always make sure that AppDir/lib exists, sometimes lib4bin does not make it
+# https://github.com/pkgforge-dev/Anylinux-AppImages/issues/269#issuecomment-3829584043
+if [ ! -d "$APPDIR"/lib ] && [ -d "$APPDIR"/shared/lib ]; then
+	ln -s shared/lib "$APPDIR"/lib
+fi
 
 # deploy directories
 while read -r d; do

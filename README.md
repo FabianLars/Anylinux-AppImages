@@ -16,12 +16,18 @@ The uruntime [automatically falls back to using namespaces](https://github.com/V
 | **AnyLinux AppImages** (made with sharun) | Use **FUSE if available**, else **fallback to using namespaces** and if that is not possible then we automatically extract to `TMPDIR` and run with post cleanup, we **do not need an FHS filesystem** and **do not depend on the host libc**, so eh make sure you have `/bin/sh` and write access to `/tmp`??? (If you can boot to a graphical session you already met those requirements). **How is this possible?** See: [How to guide](https://github.com/pkgforge-dev/Anylinux-AppImages/blob/main/HOW-TO-MAKE-THESE.md) |
 | **AnyLinux AppImages** (made with RunImage) | Similar to sharun AppImages but have a **Hard dependency on namespaces**, Lutris and virt-manager are the only ones that use this method, pending migration to sharun. |
 
+For more useful documentation about Anylinux-AppImages, see the pages below:
+
+- [How to make these](HOW-TO-MAKE-THESE.md)
+- [Hall of fame/shame](HALL-OF-FAME.md)
 
 ---
 
 | Applications                                                                                                             |
 | ------------------------------------------------------------------------------------------------------------------------ |
 [12to11](https://github.com/pkgforge-dev/12to11-AppImage)                                                                |
+[AAAAXY](https://github.com/pkgforge-dev/AAAAXY-AppImage-Enhanced)                                                       |
+[Aerofoil](https://github.com/pkgforge-dev/Aerofoil-AppImage)                                                            |
 [alacritty](https://github.com/pkgforge-dev/alacritty-AppImage)                                                          |
 [Android Tools](https://github.com/pkgforge-dev/android-tools-AppImage)                                                  |
 [Android Translation Layer](https://github.com/pkgforge-dev/android_translation_layer-AppImage)                          |
@@ -65,8 +71,10 @@ The uruntime [automatically falls back to using namespaces](https://github.com/V
 [ExtremeTuxRacer](https://github.com/pkgforge-dev/ExtremeTuxRacer-AppImage)                                              |
 [Exult](https://github.com/pkgforge-dev/Exult-AppImage)                                                                  |
 [Eyedropper](https://github.com/pkgforge-dev/Eyedropper-AppImage)                                                        |
+[FFmpeg](https://github.com/pkgforge-dev/FFmpeg-AppImage)                                                                |
 [Filelight](https://github.com/pkgforge-dev/Filelight-AppImage)                                                          |
 [foot](https://github.com/pkgforge-dev/foot-AppImage)                                                                    |
+[FreeTube](https://github.com/pkgforge-dev/FreeTube-Appimage)                                                            |
 [Fretboard](https://github.com/pkgforge-dev/Fretboard-AppImage)                                                          |
 [Gapless](https://github.com/pkgforge-dev/Gapless-AppImage)                                                              |
 [Gear Lever](https://github.com/pkgforge-dev/Gear-Lever-AppImage)                                                        |
@@ -84,6 +92,7 @@ The uruntime [automatically falls back to using namespaces](https://github.com/V
 [Graphs](https://github.com/pkgforge-dev/Graphs-AppImage)                                                                |
 [htop](https://github.com/pkgforge-dev/htop-AppImage)                                                                    |
 [Identity](https://github.com/pkgforge-dev/Identity-AppImage)                                                            |
+[ImageMagick](https://github.com/pkgforge-dev/ImageMagick-AppImage)                                                      |
 [Impression](https://github.com/pkgforge-dev/Impression-AppImage)                                                        |
 [isle-portable](https://github.com/pkgforge-dev/isle-portable-AppImage)                                                  |
 [kaffeine](https://github.com/pkgforge-dev/kaffeine-AppImage)                                                            |
@@ -137,6 +146,7 @@ The uruntime [automatically falls back to using namespaces](https://github.com/V
 [RSDKv4](https://github.com/pkgforge-dev/RSDKv4-AppImage)                                                                |
 [RustDesk](https://github.com/pkgforge-dev/RustDesk-AppImage-Enhanced)                                                   |
 [scrcpy](https://github.com/pkgforge-dev/scrcpy-AppImage)                                                                |
+[ScummVM](https://github.com/pkgforge-dev/ScummVM-AppImage)                                                              |
 [SDLPoP](https://github.com/pkgforge-dev/SDLPoP-AppImage)                                                                |
 [Secrets](https://github.com/pkgforge-dev/Secrets-AppImage)                                                              |
 [servo](https://github.com/pkgforge-dev/servo-AppImage)                                                                  |
