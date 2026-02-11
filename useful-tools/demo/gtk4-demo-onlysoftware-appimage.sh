@@ -1,6 +1,9 @@
 #!/bin/sh
 
-# Demonstration that bundles gtk3 demo app
+# Demonstration that bundles gtk4 demo app
+
+# this version deploys without hardware acceleration which results in a smaller
+# appimage, good for simple apps that do not really need hardware acceleration
 
 set -eux
 
@@ -12,9 +15,11 @@ export ANYLINUX_LIB=1
 export ICON=/usr/share/icons/hicolor/scalable/apps/org.gtk.Demo4.svg
 export DESKTOP=/usr/share/applications/org.gtk.Demo4.desktop
 export OUTPATH=./dist
-export OUTNAME=gtk4-demo-"$ARCH".AppImage
+export OUTNAME=gtk4-demo-onlysoftware-"$ARCH".AppImage
 export STARTUPWMCLASS=fuck.gnome
 export GTK_CLASS_FIX=1
+# disable hardware accel
+export ALWAYS_SOFTWARE=1
 
 pacman -Syu --noconfirm \
 	base-devel       \

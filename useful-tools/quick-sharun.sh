@@ -49,7 +49,7 @@ DEPENDENCIES="
 "
 
 # keep this for backwards compat until all existing scripts have been updated
-if [ "$EXEC_WRAPPER" = 1 ] || [ "$LOCALE_FIX" = 1 ]; then
+if [ "$EXEC_WRAPPER" = 1 ] || [ "$LOCALE_FIX" = 1 ] || [ "$ALWAYS_SOFTWARE" = 1 ]; then
 	ANYLINUX_LIB=1
 fi
 
@@ -100,6 +100,9 @@ fi
 # causing some apps crash when running xvfb-run
 export USER="${LOGNAME:-${USER:-${USERNAME:-yomama}}}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+
+# apps often need this to work
+export $(dbus-launch 2>/dev/null || echo 'NO_DBUS=1')
 
 _echo() {
 	printf '\033[1;92m%s\033[0m\n' " $*"
@@ -188,6 +191,18 @@ _help_msg() {
 	  APPDIR           Destination AppDir (default: ./AppDir).
 	  ANYLINUX_LIB     Preloads a library that unsets environment variables known to cause
 	                   problems to child processes. Set to 0 to disable.
+	                   Additionally you can set ANYLINUX_DO_NOT_LOAD_LIBS to a
+	                   list of colon separated libraries to prevent from being
+	                   dlopened, the entries support simple globbing, example:
+	                     export ANYLINUX_DO_NOT_LOAD_LIBS='libpipewire-0.3.so*'
+	                   Useful for applications that will try to dlopen several
+	                   optional dependencies that you do not want to include.
+
+	  ALWAYS_SOFTWARE  Set to 1 to enable. Sets several env variables to make
+	                   applications use software rendering, use this option when
+	                   you do not want hardware acceleration.
+	                   Enables ANYLINUX_LIB and will fail if we detect the
+	                   application made use of mesa during deployment.
 
 	  PATH_MAPPING    Configures and preloads pathmap.
 	                  Set this variable if the application is hardcoded to look
@@ -278,6 +293,66 @@ _make_appimage() {
 	exec "$TMPDIR"/uruntime2appimage.sh
 }
 
+# do a basic test to make sure at least the application is not totally broken
+# like when libraries are missing symbols and similar stuff
+_test_appimage() {
+	if [ -z "$1" ]; then
+		_err_msg "ERROR: Missing application to run!"
+		exit 1
+	elif ! _is_cmd xvfb-run; then
+		_err_msg "ERROR: --test requires 'xvfb-run'!"
+		exit 1
+	fi
+
+	APP=$1
+	shift
+
+	_echo "------------------------------------------------------------"
+	_echo "Testing '$APP'..."
+	_echo "------------------------------------------------------------"
+
+	# Allow host vulkan for vulkan-swrast since there is no GPU in the CI
+	export SHARUN_ALLOW_SYS_VKICD=1
+
+	# since there is no fuse available in CI and userns are also broken
+	# the appimage may not run if it is bigger than 400 MiB due to a restriction
+	# in the uruntime, so we will have to always force it to extract and run
+	export APPIMAGE_TARGET_DIR="$PWD"/_test-app
+	export APPIMAGE_EXTRACT_AND_RUN=1
+
+	xvfb-run -a -- "$APP" "$@" &
+	pid=$!
+
+	# let the app run for 12 seconds, if it exits early it means something is wrong
+	COUNT=0
+	while kill -0 $pid 2>/dev/null && [ "$COUNT" -lt 12 ]; do
+		sleep 1
+		COUNT=$((COUNT + 1))
+	done
+
+	set +e
+	if kill -0 $pid 2>/dev/null; then
+		_echo "------------------------------------------------------------"
+		_echo "Test went OK."
+		_echo "------------------------------------------------------------"
+		kill $pid 2>/dev/null || :
+		sleep 1
+		exit 0
+	else
+		# process exited before timeout, something went wrong.
+		wait $pid
+		status=$?
+		_err_msg "------------------------------------------------------------"
+		_err_msg "ERROR: '$APP' failed in ${COUNT} seconds with code $status"
+		_err_msg "------------------------------------------------------------"
+		# wait 20 seconds before failing, this way for example if we have a Ci run
+		# for x86_64 and aarch64, if one fails it does not instantly stop the other
+		# and people are left wondering if the problem affects both matrix or just one
+		sleep 20
+		exit 1
+	fi
+}
+
 # POSIX shell doesn't support arrays we use awk to save it into a variable
 # then with 'eval set -- $var' we add it to the positional array
 # see https://unix.stackexchange.com/questions/421158/how-to-use-pseudo-arrays-in-posix-shell-script
@@ -317,6 +392,11 @@ _determine_what_to_deploy() {
 			--) break   ;;
 			-*) continue;;
 		esac
+
+		if [ ! -e "$bin" ]; then
+			_err_msg "'$bin' is NOT present!"
+			exit 1
+		fi
 
 		# if the argument is a directory save it to later it copy it
 		if [ -d "$bin" ]; then
@@ -465,10 +545,23 @@ _make_deployment_array() {
 			"$LIB_DIR"/gconv/LATIN*.so* \
 			"$LIB_DIR"/gconv/UNICODE*.so*
 	fi
+	if [ "$ALWAYS_SOFTWARE" = 1 ]; then
+		DEPLOY_OPENGL=0
+		DEPLOY_VULKAN=0
+		echo 'GSK_RENDERER=cairo'        >> "$APPENV"
+		echo 'GDK_DISABLE=gl,vulkan'     >> "$APPENV"
+		echo 'GDK_GL=disable'            >> "$APPENV"
+		echo 'QT_QUICK_BACKEND=software' >> "$APPENV"
+		export GSK_RENDERER=cairo
+		export GDK_DISABLE=gl,vulkan
+		export GDK_GL=disable
+		export QT_QUICK_BACKEND=software
+
+		ANYLINUX_DO_NOT_LOAD_LIBS="libgallium-*:libvulkan*:libGLX_mesa.so*${ANYLINUX_DO_NOT_LOAD_LIBS:+:$ANYLINUX_DO_NOT_LOAD_LIBS}"
+	fi
 	if [ "$DEPLOY_QT" = 1 ]; then
 		DEPLOY_OPENGL=${DEPLOY_OPENGL:-1}
 		DEPLOY_COMMON_LIBS=${DEPLOY_COMMON_LIBS:-1}
-
 
 		_echo "* Deploying $QT_DIR"
 
@@ -984,10 +1077,16 @@ _add_anylinux_lib() {
 		return 0
 	fi
 
-	_echo "* Building anylinux.so..."
-	_download "$APPDIR"/.anylinux.c "$ANYLINUX_LIB_SOURCE"
-	cc -shared -fPIC "$APPDIR"/.anylinux.c -o "$APPDIR"/shared/lib/anylinux.so
-	echo "anylinux.so" >> "$APPDIR"/.preload
+	if [ ! -f "$APPDIR"/shared/lib/anylinux.so ]; then
+		_echo "* Building anylinux.so..."
+		_download "$APPDIR"/.anylinux.c "$ANYLINUX_LIB_SOURCE"
+		cc -shared -fPIC \
+		  "$APPDIR"/.anylinux.c -o "$APPDIR"/shared/lib/anylinux.so
+	fi
+
+	if ! grep -q 'anylinux.so' "$APPDIR"/.preload 2>/dev/null; then
+		echo "anylinux.so" >> "$APPDIR"/.preload
+	fi
 
 	# remove xdg-open wrapper not needed when the lib is in use
 	# we still need to have a wrapper for gio-launch-desktop though
@@ -1047,6 +1146,20 @@ _add_locale_check() {
 	else
 		# do not stop the CI if this fails
 		_err_msg "Could not add locale-check"
+	fi
+}
+
+_check_always_software() {
+	if [ "$ALWAYS_SOFTWARE" != 1 ]; then
+		return 0
+	fi
+	set -- "$APPDIR"/shared/lib/libgallium-*.so*
+	if [ -f "$1" ]; then
+		_err_msg "ALWAYS_SOFTWARE was enabled but mesa was deployed!"
+		_err_msg "Likely this application needs hardware acceleration."
+		_err_msg "Do not use this option or find a way to make sure"
+		_err_msg "the application does not dlopen mesa when running!"
+		exit 1
 	fi
 }
 
@@ -1653,6 +1766,10 @@ case "$1" in
 	--make-appimage)
 		_make_appimage
 		;;
+	--test)
+		shift
+		_test_appimage "$@"
+		;;
 	--make-static-bin)
 		shift
 		_get_sharun
@@ -1681,6 +1798,7 @@ _echo "------------------------------------------------------------"
 
 _get_sharun
 _deploy_libs "$@"
+_check_always_software
 _handle_bins_scripts
 
 echo ""
@@ -1861,7 +1979,24 @@ for dir in $topleveldirs; do
 	done
 done
 
-# make sure there is no hardcoded path to /usr/share/... in bins
+# first check for hardcoded path to /usr/share/fonts and copy if so
+src_fonts=/usr/share/fonts
+dst_fonts="$APPDIR"/share/fonts
+if grep -aoq -m 1 "$src_fonts" "$APPDIR"/shared/bin/*; then
+	if [ -d "$src_fonts" ] && [ ! -d "$dst_fonts" ]; then
+		mkdir -p "$dst_fonts"
+		for d in "$src_fonts"/*; do
+			if [ "${d##*/}" = "Adwaita" ]; then
+				continue
+			fi
+			if [ -e "$d" ]; then
+				cp -vr "$d" "$dst_fonts"
+			fi
+		done
+	fi
+fi
+
+# patch away any hardcoded path to /usr/share or /usr/lib in bins...
 set -- "$APPDIR"/shared/bin/*
 for bin do
 	if p=$(grep -ao -m 1 '/usr/share/.*/' "$bin"); then
@@ -2129,6 +2264,10 @@ for b in $(find "$APPDIR"/bin/*/ -type f ! -name '*.so*'); do
 		_echo "* Wrapped nested bin executable '$b' with sharun"
 	fi
 done
+
+if [ -n "$ANYLINUX_DO_NOT_LOAD_LIBS" ]; then
+	echo "ANYLINUX_DO_NOT_LOAD_LIBS=$ANYLINUX_DO_NOT_LOAD_LIBS:\${ANYLINUX_DO_NOT_LOAD_LIBS}" >> "$APPENV"
+fi
 
 # make sure the .env has all the "unset" last, due to a bug in the dotenv
 # library used by sharun all the unsets have to be declared last in the .env
