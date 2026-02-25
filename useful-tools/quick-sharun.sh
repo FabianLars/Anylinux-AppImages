@@ -104,6 +104,12 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
 # apps often need this to work
 export $(dbus-launch 2>/dev/null || echo 'NO_DBUS=1')
 
+# CI containers often run as root which prevents
+# web apps from running with lib4bin strace mode
+export ELECTRON_DISABLE_SANDBOX=1
+export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+export QTWEBENGINE_DISABLE_SANDBOX=1
+
 _echo() {
 	printf '\033[1;92m%s\033[0m\n' " $*"
 }
@@ -137,7 +143,17 @@ _download() {
 		_err_msg "ERROR: we need wget or curl to download $1"
 		exit 1
 	fi
-	"$DOWNLOAD_CMD" "$@"
+	COUNT=0
+	while [ "$COUNT" -lt 5 ]; do
+		if "$DOWNLOAD_CMD" "$@"; then
+			return 0
+		fi
+		_err_msg "Download failed! Trying again..."
+		COUNT=$((COUNT + 1))
+		sleep 5
+	done
+	_err_msg "ERROR: Failed to download 5 times!"
+	return 1
 }
 
 _help_msg() {
@@ -252,8 +268,6 @@ _sanity_check() {
 		_err_msg "'PATH_MAPPING=/etc:\${SHARUN_DIR}/etc'"
 		_err_msg 'NOTE: The braces in the variable are needed!'
 		exit 1
-	elif [ -z "$ICON" ] && [ ! -f "$APPDIR"/.DirIcon ]; then
-		_err_msg "WARNING: No .DirIcon in $APPDIR and ICON is not set!"
 	fi
 
 	if [ "$STRACE_MODE" = 1 ]; then
@@ -351,6 +365,42 @@ _test_appimage() {
 		sleep 20
 		exit 1
 	fi
+}
+
+# if full test is not possible lets at least check some possible issues
+_simple_test_appimage() {
+	log="$TMPDIR"/simple-test.log
+	APP=$1
+	shift
+
+	_echo "------------------------------------------------------------"
+	_echo "Doing simple test '$APP'..."
+	_echo "------------------------------------------------------------"
+
+	"$APP" "$@" 2>"$log" &
+	pid=$!
+
+	sleep 7
+	kill $pid 2>/dev/null || :
+	sleep 1
+
+	test="$(cat "$log")"
+	case "$test" in
+		*'symbol lookup error'*|\
+		*'error while loading shared libraries'*)
+			>&2 echo "$test"
+			_err_msg "------------------------------------------------------------"
+			_err_msg "ERROR: '$APP' failed simple test!"
+			_err_msg "------------------------------------------------------------"
+			sleep 20
+			exit 1
+			;;
+	esac
+
+	_echo "------------------------------------------------------------"
+	_echo "Test went OK."
+	_echo "------------------------------------------------------------"
+	exit 0
 }
 
 # POSIX shell doesn't support arrays we use awk to save it into a variable
@@ -825,41 +875,6 @@ _make_deployment_array() {
 			"$LIB_DIR"/libImlib2.so*    \
 			"$LIB_DIR"/imlib2/filters/* \
 			"$LIB_DIR"/imlib2/loaders/*
-
-		# TODO upstream to sharun
-		echo 'IMLIB2_FILTER_PATH=${SHARUN_DIR}/lib/imlib2/filters' >> "$APPENV"
-		echo 'IMLIB2_LOADER_PATH=${SHARUN_DIR}/lib/imlib2/loaders' >> "$APPENV"
-
-		# Setting IMLIB2_FILTER_PATH and IMLIB2_LOADER_PATH is good
-		# enough to make imlib2 relocatable, however there is one specific
-		# loader xpm.so that reads a file in /usr/share/imlib2/rgb.txt
-		# there is no env variable to relocate this file,
-		# so we will have resort to binary patching later on for now
-
-		# # # # # # # # # # # # # # # # # # # # # # # # # # #
-		# TODO: attempt to get upstream to adopt this patch #
-		# # # # # # # # # # # # # # # # # # # # # # # # # # #
-		#diff --git a/src/modules/loaders/loader_xpm.c b/src/modules/loaders/loader_xpm.c
-		#index e38493c..02c5d91 100644
-		#--- a/src/modules/loaders/loader_xpm.c
-		#+++ b/src/modules/loaders/loader_xpm.c
-		#@@ -89,6 +89,16 @@ xpm_parse_color(const char *color)
-		#     }
-		#
-		#     /* look in rgb txt database */
-		#+    if (!rgb_txt)
-		#+    {
-		#+        const char *data_dir = getenv("IMLIB2_DATADIR_PATH");
-		#+        if (data_dir)
-		#+        {
-		#+            char path[4096];
-		#+            snprintf(path, sizeof(path), "%s/rgb.txt", data_dir);
-		#+            rgb_txt = fopen(path, "r");
-		#+        }
-		#+    }
-		#     if (!rgb_txt)
-		#         rgb_txt = fopen(PACKAGE_DATA_DIR "/rgb.txt", "r");
-		#     if (!rgb_txt)
 	fi
 	if [ "$DEPLOY_SYS_PYTHON" = 1 ]; then
 		if pythonbin=$(command -v python); then
@@ -1163,7 +1178,7 @@ _check_always_software() {
 	fi
 }
 
-_add_certs_check() {
+_add_p11kit_cert_hook() {
 	cert_check="$APPDIR"/bin/check-ca-certs.src.hook
 	if [ -f "$cert_check" ]; then
 		return 0
@@ -1171,22 +1186,36 @@ _add_certs_check() {
 
 	cat <<-'EOF' > "$cert_check"
 	#!/bin/sh
-	if [ ! -f /etc/ssl/certs/ca-certificates.crt ]; then
-	    _possible_certs='
-	      /etc/pki/tls/cert.pem
-	      /etc/pki/tls/cacert.pem
-	      /etc/ssl/cert.pem
-	    '
-	    for c in $_possible_certs; do
-	        if [ -f "$c" ]; then
-	            REQUESTS_CA_BUNDLE=${REQUESTS_CA_BUNDLE:-$c}
-	            CURL_CA_BUNDLE=${CURL_CA_BUNDLE:-$c}
-	            SSL_CERT_FILE=${SSL_CERT_FILE:-$c}
-	            export REQUESTS_CA_BUNDLE CURL_CA_BUNDLE SSL_CERT_FILE
-	            break
-	        fi
-	    done
-	    [ -f "$c" ] || >&2 echo "WARNING: Cannot find CA Certificates in '/etc'!"
+
+	_possible_certs='
+	  /etc/ssl/certs/ca-certificates.crt
+	  /etc/pki/tls/cert.pem
+	  /etc/pki/tls/cacert.pem
+	  /etc/ssl/cert.pem
+	  /var/lib/ca-certificates/ca-bundle.pem
+	'
+
+	for c in $_possible_certs; do
+	    if [ -f "$c" ]; then
+	        break
+	    fi
+	done
+
+	if [ -f "$c" ]; then
+	    # With p11kit we have to make a symlink in /tmp because the meme
+	    # library does not check any of these variables set by sharun:
+	    #
+	    # REQUESTS_CA_BUNDLE
+	    # CURL_CA_BUNDLE
+	    # SSL_CERT_FILE
+	    #
+	    # So we had to patch it to a path in /tmp and now symlink to the
+	    # found certificate at runtime...
+	    _host_cert=/tmp/.___host-certs/ca-certificates.crt
+	    if [ -d "$APPDIR"/lib/pkcs11 ] && [ ! -f "$_host_cert" ]; then
+	        mkdir -p /tmp/.___host-certs || :
+	        ln -sfn "$c" "$_host_cert" || :
+	    fi
 	fi
 	EOF
 	chmod +x "$cert_check"
@@ -1625,14 +1654,15 @@ _add_path_mapping_hardcoded() {
 	    exit 1
 	fi
 
-	if [ -n "$_tmp_bin" ]; then
-	    ln -sfn "$APPDIR"/bin /tmp/"$_tmp_bin"
+	_symlink_error_msg="Failed to create a very important symlink in /tmp"
+	if [ -n "$_tmp_bin" ] && ! ln -sfn "$APPDIR"/bin /tmp/"$_tmp_bin"; then
+	    >&2 echo "$_symlink_error_msg"
 	fi
-	if [ -n "$_tmp_lib" ]; then
-	    ln -sfn "$APPDIR"/lib /tmp/"$_tmp_lib"
+	if [ -n "$_tmp_lib" ] && ! ln -sfn "$APPDIR"/lib /tmp/"$_tmp_lib"; then
+	    >&2 echo "$_symlink_error_msg"
 	fi
-	if [ -n "$_tmp_share" ]; then
-	    ln -sfn "$APPDIR"/share /tmp/"$_tmp_share"
+	if [ -n "$_tmp_share" ] && ! ln -sfn "$APPDIR"/share /tmp/"$_tmp_share"; then
+	    >&2 echo "$_symlink_error_msg"
 	fi
 	EOF
 	chmod +x "$PATH_MAPPING_SCRIPT"
@@ -1676,6 +1706,260 @@ _patch_away_usr_share_dir() {
 	_add_path_mapping_hardcoded || exit 1
 
 	sed -i -e "s|_tmp_share=.*|_tmp_share=$_tmp_share|g" "$PATH_MAPPING_SCRIPT"
+}
+
+_check_hardcoded_lib_dirs() {
+	# check for hardcoded path to any other possibly bundled library dir
+	set -- "$APPDIR"/shared/lib/*
+	for d do
+		[ -d "$d" ] || continue
+		d=${d##*/}
+		# skip directories we already handle here or in sharun
+		case "$d" in
+			alsa-lib    |\
+			dri         |\
+			gbm         |\
+			gconv       |\
+			gdk-pixbuf* |\
+			gio         |\
+			gtk*        |\
+			gstreamer*  |\
+			gvfs        |\
+			ImageMagick*|\
+			imlib2      |\
+			libproxy    |\
+			locale      |\
+			pipewire*   |\
+			pulseaudio  |\
+			qt*         |\
+			spa*        |\
+			vdpau       )
+				continue
+				;;
+		esac
+
+		for f in "$APPDIR"/shared/lib/*.so* "$APPDIR"/shared/bin/*; do
+			if [ ! -f "$f" ]; then
+				continue
+			elif grep -aoq -m 1 "$LIB_DIR"/"$d" "$f"; then
+				_echo "* Detected hardcoded path to $LIB_DIR/$d in $f"
+				_patch_away_usr_lib_dir "$f" || :
+			fi
+		done
+	done
+}
+
+_check_hardcoded_data_dirs() {
+	# first check for hardcoded path to /usr/share/fonts and copy if so
+	src_fonts=/usr/share/fonts
+	dst_fonts="$APPDIR"/share/fonts
+	if grep -aoq -m 1 "$src_fonts" "$APPDIR"/shared/bin/*; then
+		if [ -d "$src_fonts" ] && [ ! -d "$dst_fonts" ]; then
+			mkdir -p "$dst_fonts"
+			for d in "$src_fonts"/*; do
+				if [ "${d##*/}" = "Adwaita" ]; then
+					continue
+				fi
+				if [ -e "$d" ]; then
+					cp -vr "$d" "$dst_fonts"
+				fi
+			done
+		fi
+	fi
+
+	# now check if any of the bundled datadirs need to be patched
+	set -- "$APPDIR"/share/*
+	for d do
+		[ -d "$d" ] || continue
+		d=${d##*/}
+		# skip directories we already handle here or in sharun
+		case "$d" in
+			alsa     |\
+			drirc.d  |\
+			file     |\
+			glib-*   |\
+			glvnd    |\
+			icons    |\
+			libdrm   |\
+			libthai  |\
+			locale   |\
+			terminfo |\
+			vulkan   |\
+			X11      )
+				continue
+				;;
+		esac
+
+		for f in "$APPDIR"/shared/lib/*.so* "$APPDIR"/shared/bin/*; do
+			if [ ! -f "$f" ]; then
+				continue
+			elif grep -aoq -m 1 /usr/share/"$d" "$f"; then
+				_echo "* Detected hardcoded path to /usr/share/$d in $f"
+				_patch_away_usr_share_dir "$f" || :
+			fi
+		done
+	done
+}
+
+_post_deployment_steps() {
+	# these need to be done later because sharun may make shared/lib a symlink
+	# to lib and if we make shared/lib first then it breaks sharun
+	if [ "$DEPLOY_SYS_PYTHON" = 1 ]; then
+		set -- "$LIB_DIR"/python*
+		if [ -d "$1" ]; then
+			cp -r "$1" "$APPDIR"/shared/lib
+		else
+			_err_msg "ERROR: Cannot find python installation in $LIB_DIR"
+			exit 1
+		fi
+		if [ "$DEBLOAT_SYS_PYTHON" = 1 ]; then
+			(
+				cd "$APPDIR"/shared/lib/"${1##*/}"
+				find ./ -type f -name '*.a' -delete || :
+				for f in $(find ./ -type f -name '*.pyc' -print); do
+					case "$f" in
+						*/"$MAIN_BIN"*) :;;
+						*) [ ! -f "$f" ] || rm -f "$f";;
+					esac
+				done
+			)
+		fi
+	fi
+	if [ "$DEPLOY_FLUTTER" = 1 ]; then
+		if [ -z "$FLUTTER_LIB" ]; then
+			_err_msg "Flutter deployment was forced but looks like the"
+			_err_msg "the application does not link to libflutter at all"
+			_err_msg "If you see this message please open a bug report!"
+			exit 1
+		fi
+
+		# flutter apps need to have a relative lib and data directory
+		# we need to find the directory that contains libapp.so
+		if libapp=$(cd "$APPDIR"/bin \
+		  && find ../shared/lib/ -type f -name 'libapp.so' -print -quit); then
+			d=${libapp%/*}
+			if [ ! -d "$APPDIR"/bin/"${d##*/}" ]; then
+				ln -s "$d" "$APPDIR"/bin/"${d##*/}"
+			fi
+		else
+			_err_msg "Cannot find libapp.so in $APPDIR"
+			_err_msg "include it for flutter deployment to work"
+		fi
+
+		dst_flutter_dir="$APPDIR"/bin/data
+		if [ ! -d "$dst_flutter_dir" ]; then
+			if [ -z "$FLUTTER_DATA_DIR" ]; then
+				d=${FLUTTER_LIB%/*.so*}
+				# find data dir, we assume it is relative to
+				# where libflutter*.so came from
+				if [ -d "$d"/../data ]; then
+					FLUTTER_DATA_DIR="$d"/../data
+				elif [ -d "$d"/../../data ]; then
+					FLUTTER_DATA_DIR="$d"/../../data
+				else
+					_err_msg "Cannot find data directory of $FLUTTER_LIB"
+					_err_msg "Please set FLUTTER_DATA_DIR to its location"
+					exit 1
+				fi
+			fi
+			cp -rv "$FLUTTER_DATA_DIR" "$dst_flutter_dir"
+			_echo "* Copied flutter data directory"
+		fi
+	fi
+	if [ "$DEPLOY_IMAGEMAGICK" = 1 ]; then
+		mkdir -p "$APPDIR"/shared/lib  "$APPDIR"/etc
+		cp -rv /etc/ImageMagick-* "$APPDIR"/etc
+
+		# we can copy /usr/share/ImageMagick to the AppDir and set MAGICK_CONFIGURE_PATH
+		# to include both the etc/ImageMagick and share/ImageMagick directory
+		# but it is simpler to instead have all the config files in a single location
+		# imagemagick will load them all regardless
+		set -- /usr/share/ImageMagick-*/*.xml
+		if [ -f "$1" ]; then
+			cp -rv /usr/share/ImageMagick-*/*.xml "$APPDIR"/etc/ImageMagick*
+		fi
+		# there is also a configuration file in libdir
+		set -- "$LIB_DIR"/ImageMagick-*/config*/configure.xml
+		if [ -f "$1" ]; then
+			cp -v "$1" "$APPDIR"/etc/ImageMagick*
+		fi
+
+		# MAGICK_HOME is all that needs to be set
+		echo 'MAGICK_HOME=${SHARUN_DIR}' >> "$APPENV"
+		# however MAGICK_HOME only works when compiled with a specific flag
+		# we can still make this relocatable by setting these other env variables
+		# which will always work even when not compiled with MAGICK_HOME support
+		(
+			cd "$APPDIR"
+			set -- shared/lib/ImageMagick-*/modules*/coders
+			if [ -d "$1" ]; then
+				echo "MAGICK_CODER_MODULE_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
+			fi
+			set -- shared/lib/ImageMagick-*/modules*/filters
+			if [ -d "$1" ]; then
+				# checking the code it seems that MAGICK_FILTER_MODULE_PATH
+				# is NOT USED in the code and seems to be an error!!! the variable
+				# that modules.c references is MAGICK_CODER_FILTER_PATH
+				# we will still be set both just in case
+				echo "MAGICK_CODER_FILTER_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
+				echo "MAGICK_FILTER_MODULE_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
+
+			fi
+			set -- etc/ImageMagick*
+			if [ -d "$1" ]; then
+				echo "MAGICK_CONFIGURE_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
+			fi
+		)
+
+		_echo "* Copied ImageMagick directories"
+	fi
+	if [ "$DEPLOY_GEGL" = 1 ]; then
+		gegldir=$(echo "$LIB_DIR"/gegl-*)
+		dst_gegldir="$APPDIR"/shared/lib/"${gegldir##*/}"
+		if [ -d "$gegldir" ] && [ -d "$dst_gegldir" ]; then
+			cp "$gegldir"/*.json "$dst_gegldir"
+			_echo "* Copied gegl json files"
+		fi
+	fi
+	if [ "$DEPLOY_QT" = 1 ]; then
+		src_trans=/usr/share/"$QT_DIR"/translations
+		dst_trans="$APPDIR"/shared/lib/"$QT_DIR"/translations
+		if [ -d "$src_trans" ] && [ ! -d "$dst_trans" ]; then
+			mkdir -p "${dst_trans%/*}"
+			cp -r "$src_trans" "$dst_trans"
+			rm -f "$dst_trans"/assistant*.qm
+			rm -f "$dst_trans"/designer*.qm
+		fi
+		if [ -f "$TMPDIR"/libqgtk3.so ]; then
+			d="$APPDIR"/lib/"$QT_DIR"/plugins/platformthemes
+			mkdir -p "$d"
+			mv "$TMPDIR"/libqgtk3.so "$d"
+			"$APPDIR"/sharun -g 2>/dev/null || :
+		fi
+	fi
+	if [ "$DEPLOY_SYS_PYTHON" = 1 ] || [ "$DEPLOY_PYTHON" = 1 ]; then
+		_fix_cpython_ldconfig_mess
+	fi
+}
+
+_handle_nested_bins() {
+	# wrap any executable in lib with sharun
+	for b in $(find "$APPDIR"/shared/lib/ -type f ! -name '*.so*'); do
+		if [ -x "$b" ] && [ -x "$APPDIR"/shared/bin/"${b##*/}" ]; then
+			rm -f "$b"
+			ln "$APPDIR"/sharun "$b"
+			_echo "* Wrapped lib executable '$b' with sharun"
+		fi
+	done
+
+	# do the same for possible nested binaries in bin
+	for b in $(find "$APPDIR"/bin/*/ -type f ! -name '*.so*' 2>/dev/null); do
+		if [ -x "$b" ] && [ -x "$APPDIR"/shared/bin/"${b##*/}" ]; then
+			rm -f "$b"
+			ln "$APPDIR"/sharun "$b"
+			_echo "* Wrapped nested bin executable '$b' with sharun"
+		fi
+	done
 }
 
 # sometimes developers add stuff like /bin/sh or env as the Exec= key of the
@@ -1758,7 +2042,6 @@ _make_static_bin() (
 	_echo "------------------------------------------------------------"
 )
 
-
 case "$1" in
 	--help)
 		_help_msg
@@ -1769,6 +2052,10 @@ case "$1" in
 	--test)
 		shift
 		_test_appimage "$@"
+		;;
+	--simple-test)
+		shift
+		_simple_test_appimage "$@"
 		;;
 	--make-static-bin)
 		shift
@@ -1844,20 +2131,26 @@ for lib do case "$lib" in
 		continue
 		;;
 	*p11-kit-trust.so*)
-		# good path that library should have
-		ssl_path="/etc/ssl/certs/ca-certificates.crt"
+		# Because OpenSUSE had to ruin this, we will have to patch the
+		# the certificates to a path in /tmp that we will later make
+		# a symlink that points to the real host certs location
+
+		# Originally we just patch to etc/ssl/certs/ca-certificates.crt
+		# See https://github.com/kem-a/AppManager/issues/39
 
 		# string has to be same length
 		problem_path="/usr/share/ca-certificates/trust-source"
-		ssl_path_fix="/etc/ssl/certs//////ca-certificates.crt"
+		ssl_path_fix="/tmp/.___host-certs/ca-certificates.crt"
 
-		if grep -Eaoq -m 1 "$ssl_path" "$lib"; then
+		if grep -Eaoq -m 1 "$ssl_path_fix" "$lib"; then
 			continue # all good nothing to fix
 		elif grep -Eaoq -m 1 "$problem_path" "$lib"; then
 			sed -i -e "s|$problem_path|$ssl_path_fix|g" "$lib"
 		else
 			continue # TODO add more possible problematic paths
 		fi
+
+		_add_p11kit_cert_hook
 
 		_echo "* fixed path to /etc/ssl/certs in $lib"
 		_patch_away_usr_share_dir "$lib" || continue
@@ -1908,9 +2201,6 @@ for lib do case "$lib" in
 		_patch_away_usr_bin_dir "$lib" || :
 		_add_bwrap_wrapper
 		;;
-	*libssl*.so*)
-		_add_certs_check
-		;;
 	*libdecor*.so*)
 		ADD_HOOKS="${ADD_HOOKS:+$ADD_HOOKS:}fix-gnome-csd.src.hook"
 		;;
@@ -1942,59 +2232,9 @@ for lib do case "$lib" in
 	esac
 done
 
-# check for hardcoded path to any other possibly bundled library dir
-topleveldirs=$(find "$APPDIR"/shared/lib/ -maxdepth 1  -type d | sed 's|/.*/||')
-for dir in $topleveldirs; do
-	# skip directories we already handle here on in sharun
-	case "$dir" in
-		alsa-lib    |\
-		dri         |\
-		gbm         |\
-		gconv       |\
-		gdk-pixbuf* |\
-		gio         |\
-		gtk*        |\
-		gstreamer*  |\
-		gvfs        |\
-		ImageMagick*|\
-		imlib2      |\
-		libproxy    |\
-		locale      |\
-		pipewire*   |\
-		pulseaudio  |\
-		qt*         |\
-		spa*        |\
-		vdpau       )
-			continue
-			;;
-	esac
-
-	for f in "$APPDIR"/shared/lib/*.so* "$APPDIR"/shared/bin/*; do
-		if [ ! -f "$f" ]; then
-			continue
-		elif grep -aoq -m 1 "$LIB_DIR"/"$dir" "$f"; then
-			_echo "* Detected hardcoded path to $LIB_DIR/$dir in $f"
-			_patch_away_usr_lib_dir "$f" || :
-		fi
-	done
-done
-
-# first check for hardcoded path to /usr/share/fonts and copy if so
-src_fonts=/usr/share/fonts
-dst_fonts="$APPDIR"/share/fonts
-if grep -aoq -m 1 "$src_fonts" "$APPDIR"/shared/bin/*; then
-	if [ -d "$src_fonts" ] && [ ! -d "$dst_fonts" ]; then
-		mkdir -p "$dst_fonts"
-		for d in "$src_fonts"/*; do
-			if [ "${d##*/}" = "Adwaita" ]; then
-				continue
-			fi
-			if [ -e "$d" ]; then
-				cp -vr "$d" "$dst_fonts"
-			fi
-		done
-	fi
-fi
+_post_deployment_steps
+_check_hardcoded_lib_dirs
+_check_hardcoded_data_dirs
 
 # patch away any hardcoded path to /usr/share or /usr/lib in bins...
 set -- "$APPDIR"/shared/bin/*
@@ -2008,144 +2248,6 @@ for bin do
 		_patch_away_usr_lib_dir "$bin" || :
 	fi
 done
-
-# these need to be done later because sharun may make shared/lib a symlink to lib
-# and if we make shared/lib first then it breaks sharun
-if [ "$DEPLOY_SYS_PYTHON" = 1 ]; then
-	set -- "$LIB_DIR"/python*
-	if [ -d "$1" ]; then
-		cp -r "$1" "$APPDIR"/shared/lib
-	else
-		_err_msg "ERROR: Cannot find python installation in $LIB_DIR"
-		exit 1
-	fi
-	if [ "$DEBLOAT_SYS_PYTHON" = 1 ]; then
-		(
-			cd "$APPDIR"/shared/lib/"${1##*/}"
-			for f in $(find ./ -type f -name '*.pyc' -print); do
-				case "$f" in
-					*/"$MAIN_BIN"*) :;;
-					*) [ ! -f "$f" ] || rm -f "$f";;
-				esac
-			done
-		)
-	fi
-fi
-if [ "$DEPLOY_FLUTTER" = 1 ]; then
-	if [ -z "$FLUTTER_LIB" ]; then
-		_err_msg "Flutter deployment was forced but looks like the"
-		_err_msg "the application does not link to libflutter at all"
-		_err_msg "If you see this message please open a bug report!"
-		exit 1
-	fi
-
-	# flutter apps need to have a relative lib and data directory
-	# we need to find the directory that contains libapp.so
-	if libapp=$(cd "$APPDIR"/bin \
-	  && find ../shared/lib/ -type f -name 'libapp.so' -print -quit); then
-		d=${libapp%/*}
-		if [ ! -d "$APPDIR"/bin/"${d##*/}" ]; then
-			ln -s "$d" "$APPDIR"/bin/"${d##*/}"
-		fi
-	else
-		_err_msg "Cannot find libapp.so in $APPDIR"
-		_err_msg "include it for flutter deployment to work"
-	fi
-
-	dst_flutter_dir="$APPDIR"/bin/data
-	if [ ! -d "$dst_flutter_dir" ]; then
-		if [ -z "$FLUTTER_DATA_DIR" ]; then
-			d=${FLUTTER_LIB%/*.so*}
-			# find data dir, we assume it is relative to
-			# where libflutter*.so came from
-			if [ -d "$d"/../data ]; then
-				FLUTTER_DATA_DIR="$d"/../data
-			elif [ -d "$d"/../../data ]; then
-				FLUTTER_DATA_DIR="$d"/../../data
-			else
-				_err_msg "Cannot find data directory of $FLUTTER_LIB"
-				_err_msg "Please set FLUTTER_DATA_DIR to its location"
-				exit 1
-			fi
-		fi
-		cp -rv "$FLUTTER_DATA_DIR" "$dst_flutter_dir"
-		_echo "* Copied flutter data directory"
-	fi
-fi
-if [ "$DEPLOY_IMAGEMAGICK" = 1 ]; then
-	mkdir -p "$APPDIR"/shared/lib  "$APPDIR"/etc
-	cp -rv /etc/ImageMagick-* "$APPDIR"/etc
-
-	# we can copy /usr/share/ImageMagick to the AppDir and set MAGICK_CONFIGURE_PATH
-	# to include both the etc/ImageMagick and share/ImageMagick directory
-	# but it is simpler to instead have all the config files in a single location
-	# imagemagick will load them all regardless
-	set -- /usr/share/ImageMagick-*/*.xml
-	if [ -f "$1" ]; then
-		cp -rv /usr/share/ImageMagick-*/*.xml "$APPDIR"/etc/ImageMagick*
-	fi
-	# there is also a configuration file in libdir
-	set -- "$LIB_DIR"/ImageMagick-*/config*/configure.xml
-	if [ -f "$1" ]; then
-		cp -v "$1" "$APPDIR"/etc/ImageMagick*
-	fi
-
-	# MAGICK_HOME is all that needs to be set
-	echo 'MAGICK_HOME=${SHARUN_DIR}' >> "$APPENV"
-	# however MAGICK_HOME only works when compiled with a specific flag
-	# we can still make this relocatable by setting these other env variables
-	# which will always work even when not compiled with MAGICK_HOME support
-	(
-		cd "$APPDIR"
-		set -- shared/lib/ImageMagick-*/modules*/coders
-		if [ -d "$1" ]; then
-			echo "MAGICK_CODER_MODULE_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
-		fi
-		set -- shared/lib/ImageMagick-*/modules*/filters
-		if [ -d "$1" ]; then
-			# checking the code it seems that MAGICK_FILTER_MODULE_PATH
-			# is NOT USED in the code and seems to be an error!!! the variable
-			# that modules.c references is MAGICK_CODER_FILTER_PATH
-			# we will still be set both just in case
-			echo "MAGICK_CODER_FILTER_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
-			echo "MAGICK_FILTER_MODULE_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
-
-		fi
-		set -- etc/ImageMagick*
-		if [ -d "$1" ]; then
-			echo "MAGICK_CONFIGURE_PATH=\${SHARUN_DIR}/$1" >> "$APPENV"
-		fi
-	)
-
-	_echo "* Copied ImageMagick directories"
-fi
-if [ "$DEPLOY_GEGL" = 1 ]; then
-	gegldir=$(echo "$LIB_DIR"/gegl-*)
-	dst_gegldir="$APPDIR"/shared/lib/"${gegldir##*/}"
-	if [ -d "$gegldir" ] && [ -d "$dst_gegldir" ]; then
-		cp "$gegldir"/*.json "$dst_gegldir"
-		_echo "* Copied gegl json files"
-	fi
-fi
-if [ "$DEPLOY_QT" = 1 ]; then
-	src_trans=/usr/share/"$QT_DIR"/translations
-	dst_trans="$APPDIR"/shared/lib/"$QT_DIR"/translations
-	if [ -d "$src_trans" ] && [ ! -d "$dst_trans" ]; then
-		mkdir -p "${dst_trans%/*}"
-		cp -r "$src_trans" "$dst_trans"
-		rm -f "$dst_trans"/assistant*.qm
-		rm -f "$dst_trans"/designer*.qm
-	fi
-	if [ -f "$TMPDIR"/libqgtk3.so ]; then
-		d="$APPDIR"/lib/"$QT_DIR"/plugins/platformthemes
-		mkdir -p "$d"
-		mv "$TMPDIR"/libqgtk3.so "$d"
-		"$APPDIR"/sharun -g 2>/dev/null || :
-	fi
-fi
-if [ "$DEPLOY_SYS_PYTHON" = 1 ] || [ "$DEPLOY_PYTHON" = 1 ]; then
-	_fix_cpython_ldconfig_mess
-fi
 
 # some libraries may need to look for a relative ../share directory
 # normally this is for when they are located in /usr/lib
@@ -2247,23 +2349,7 @@ done <<-EOF
 $ADD_DIR
 EOF
 
-# wrap any executable in lib with sharun
-for b in $(find "$APPDIR"/shared/lib/ -type f ! -name '*.so*'); do
-	if [ -x "$b" ] && [ -x "$APPDIR"/shared/bin/"${b##*/}" ]; then
-		rm -f "$b"
-		ln "$APPDIR"/sharun "$b"
-		_echo "* Wrapped lib executable '$b' with sharun"
-	fi
-done
-
-# do the same for possible nested binaries in bin
-for b in $(find "$APPDIR"/bin/*/ -type f ! -name '*.so*'); do
-	if [ -x "$b" ] && [ -x "$APPDIR"/shared/bin/"${b##*/}" ]; then
-		rm -f "$b"
-		ln "$APPDIR"/sharun "$b"
-		_echo "* Wrapped nested bin executable '$b' with sharun"
-	fi
-done
+_handle_nested_bins
 
 if [ -n "$ANYLINUX_DO_NOT_LOAD_LIBS" ]; then
 	echo "ANYLINUX_DO_NOT_LOAD_LIBS=$ANYLINUX_DO_NOT_LOAD_LIBS:\${ANYLINUX_DO_NOT_LOAD_LIBS}" >> "$APPENV"

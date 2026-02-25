@@ -49,7 +49,7 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [Blender](https://github.com/pkgforge-dev/Blender-AppImage)                                                              |
 [Cannonball](https://github.com/pkgforge-dev/Cannonball-AppImage)                                                        |
 [Cartridges](https://github.com/pkgforge-dev/Cartridges-AppImage)                                                        |
-[CDogs-SDL](https://github.com/pkgforge-dev/CDogs-SDL-AppImage)                                                          |
+[C-Dogs_SDL](https://github.com/pkgforge-dev/CDogs-SDL-AppImage)                                                         |
 [Cemu](https://github.com/pkgforge-dev/Cemu-AppImage-Enhanced)                                                           |
 [Citron](https://github.com/pkgforge-dev/Citron-AppImage)                                                                |
 [Clapper](https://github.com/pkgforge-dev/Clapper-AppImage)                                                              |
@@ -70,6 +70,7 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [dhewm3](https://github.com/pkgforge-dev/dhewm3-AppImage)                                                                |
 [Discord](https://github.com/pkgforge-dev/Discord-AppImage)                                                              |
 [Dolphin-emu](https://github.com/pkgforge-dev/Dolphin-emu-AppImage)                                                      |
+[DOSBox-X](https://github.com/pkgforge-dev/DOSBox-X-AppImage)                                                            |
 [Dr. Robotnik's Ring Racers](https://github.com/pkgforge-dev/Dr-Robotniks-Ring-Racers-AppImage)                          |
 [Drum Machine](https://github.com/pkgforge-dev/Drum-Machine-AppImage)                                                    |
 [dunst](https://github.com/pkgforge-dev/dunst-AppImage)                                                                  |
@@ -77,6 +78,7 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [ECWolf](https://github.com/pkgforge-dev/ECWolf-AppImage)                                                                |
 [EDuke32](https://github.com/pkgforge-dev/EDuke32-AppImage)                                                              |
 [Elastic](https://github.com/pkgforge-dev/Elastic-AppImage)                                                              |
+[Element Desktop](https://github.com/pkgforge-dev/Element-Desktop-AppImage)                                              |
 [ePSXe](https://github.com/pkgforge-dev/ePSXe-AppImage)                                                                  |
 [Extension Manager](https://github.com/pkgforge-dev/Extension-Manager-AppImage)                                          |
 [ExtremeTuxRacer](https://github.com/pkgforge-dev/ExtremeTuxRacer-AppImage)                                              |
@@ -112,6 +114,8 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [kdenlive](https://github.com/pkgforge-dev/kdenlive-AppImage-Enhanced)                                                   |
 [Keypunch](https://github.com/pkgforge-dev/Keypunch-AppImage)                                                            |
 [KiCad](https://github.com/pkgforge-dev/KiCad-AppImage)                                                                  |
+[Kid3](https://github.com/pkgforge-dev/Kid3-AppImage)                                                                    |
+[Knights](https://github.com/pkgforge-dev/Knights-AppImage)                                                              |
 [Kronos](https://github.com/pkgforge-dev/Kronos-AppImage)                                                                |
 [Ladybird](https://github.com/pkgforge-dev/ladybird-appimage)                                                            |
 [Libation](https://github.com/pkgforge-dev/Libation-AppImage)                                                            |
@@ -120,20 +124,28 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [Lutris](https://github.com/pkgforge-dev/Lutris-AppImage)                                                                |
 [MAME](https://github.com/pkgforge-dev/MAME-AppImage)                                                                    |
 [Mednafen](https://github.com/pkgforge-dev/mednafen-appimage)                                                            |
+[melonDS](https://github.com/pkgforge-dev/melonDS-AppImage-Enhanced)                                                     |
 [MESA](https://github.com/pkgforge-dev/MESA-AppImage)                                                                    |
 [Mini-vMac](https://github.com/pkgforge-dev/Mini-vMac-AppImage)                                                          |
 [Mousai](https://github.com/pkgforge-dev/Mousai-AppImage)                                                                |
 [mpv](https://github.com/pkgforge-dev/mpv-AppImage)                                                                      |
 [NBlood](https://github.com/pkgforge-dev/NBlood-AppImage)                                                                |
+[Nestopia](https://github.com/pkgforge-dev/Nestopia-AppImage)                                                            |
+[Neverball](https://github.com/pkgforge-dev/Neverball-AppImage)                                                          |
 [NewsFlash](https://github.com/pkgforge-dev/NewsFlash-AppImage)                                                          |
 [Nomacs](https://github.com/pkgforge-dev/Nomacs-AppImage)                                                                |
 [NSZ](https://github.com/pkgforge-dev/NSZ-AppImage)                                                                      |
+[Nugget-Doom](https://github.com/pkgforge-dev/Nugget-Doom-AppImage-Enhanced)                                             |
 [NXEngine-evo](https://github.com/pkgforge-dev/NXEngine-evo-AppImage-Enhanced)                                           |
 [OBS Studio](https://github.com/pkgforge-dev/OBS-Studio-AppImage)                                                        |
 [okteta](https://github.com/pkgforge-dev/okteta-AppImage)                                                                |
+[OpenClaw](https://github.com/pkgforge-dev/OpenClaw-AppImage)                                                            |
 [opencode](https://github.com/pkgforge-dev/opencode-AppImage-Enhanced)                                                   |
 [OpenJazz](https://github.com/pkgforge-dev/OpenJazz-AppImage)                                                            |
 [OpenLara](https://github.com/pkgforge-dev/OpenLara-AppImage)                                                            |
+[openMSX](https://github.com/pkgforge-dev/openMSX-AppImage)                                                              |
+[OpenRCT2](https://github.com/pkgforge-dev/OpenRCT2-AppImage-Enhanced)                                                   |
+[OpenTTD](https://github.com/pkgforge-dev/OpenTTD-AppImage)                                                              |
 [OpenTyrian2000](https://github.com/pkgforge-dev/OpenTyrian2000-AppImage)                                                |
 [Oversteer](https://github.com/pkgforge-dev/Oversteer-AppImage)                                                          |
 [pavucontrol-qt](https://github.com/pkgforge-dev/pavucontrol-qt-AppImage)                                                |
@@ -152,8 +164,10 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [Qimgv](https://github.com/pkgforge-dev/Qimgv-AppImage)                                                                  |
 [Reco](https://github.com/pkgforge-dev/Reco-AppImage)                                                                    |
 [Rednukem](https://github.com/pkgforge-dev/Rednukem-AppImage)                                                            |
+[REDRIVER2](https://github.com/pkgforge-dev/REDRIVER2-AppImage)                                                          |
 [Rewaita](https://github.com/pkgforge-dev/Rewaita-AppImage)                                                              |
 [RigelEngine](https://github.com/pkgforge-dev/RigelEngine-AppImage)                                                      |
+[Riseup-VPN](https://github.com/pkgforge-dev/Riseup-VPN-AppImage)                                                        |
 [RMG](https://github.com/pkgforge-dev/RMG-AppImage-Enhanced)                                                             |
 [Rnote](https://github.com/pkgforge-dev/Rnote-AppImage)                                                                  |
 [rofi](https://github.com/pkgforge-dev/rofi-AppImage)                                                                    |
@@ -170,6 +184,7 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [Signal](https://github.com/pkgforge-dev/Signal-AppImage-Enhanced)                                                       |
 [Snes9x](https://github.com/pkgforge-dev/Snes9x-AppImage-Enhanced)                                                       |
 [soh](https://github.com/pkgforge-dev/soh-AppImage-Enhanced)                                                             |
+[Sonic 3 A.I.R.](https://github.com/pkgforge-dev/Sonic-3-AIR-AppImage)                                                   |
 [Sonic-Mania-Decompilation](https://github.com/pkgforge-dev/Sonic-Mania-Decompilation-AppImage)                          |
 [sound-space-plus](https://github.com/pkgforge-dev/sound-space-plus-AppImage)                                            |
 [spacecadetpinball](https://github.com/pkgforge-dev/spacecadetpinball-AppImage)                                          |
@@ -181,11 +196,13 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [stirling-pdf](https://github.com/pkgforge-dev/Stirling-PDF-AppImage)                                                    |
 [strawberry](https://github.com/pkgforge-dev/strawberry-AppImage)                                                        |
 [Sudachi](https://github.com/pkgforge-dev/Sudachi-AppImage)                                                              |
+[Supermodel](https://github.com/pkgforge-dev/Supermodel-AppImage)                                                        |
 [SuperTux](https://github.com/pkgforge-dev/SuperTux-AppImage-Enhanced)                                                   |
 [SuperTuxKart](https://github.com/pkgforge-dev/SuperTuxKart-AppImage-Enhanced)                                           |
 [sView](https://github.com/pkgforge-dev/sView-AppImage)                                                                  |
 [system-monitoring-center](https://github.com/pkgforge-dev/system-monitoring-center-AppImage)                            |
 [Tagger](https://github.com/pkgforge-dev/Tagger-AppImage)                                                                |
+[Taisei Project](https://github.com/pkgforge-dev/Taisei-Project-AppImage)                                                |
 [Taradino](https://github.com/pkgforge-dev/Taradino-AppImage)                                                            |
 [Torzu](https://github.com/pkgforge-dev/Torzu-AppImage)                                                                  |
 [TouchHLE](https://github.com/pkgforge-dev/TouchHLE-AppImage)                                                            |
@@ -194,6 +211,7 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [Tux Football](https://github.com/pkgforge-dev/Tux-Football-AppImage)                                                    |
 [Tuxpuck](https://github.com/pkgforge-dev/Tuxpuck-AppImage)                                                              |
 [uad-ng](https://github.com/pkgforge-dev/uad-ng-AppImage)                                                                |
+[UEFITool](https://github.com/pkgforge-dev/UEFITool-AppImage)                                                            |
 [UnleashedRecomp](https://github.com/pkgforge-dev/UnleashedRecomp-AppImage)                                              |
 [Varia](https://github.com/pkgforge-dev/Varia-AppImage)                                                                  |
 [vcmi](https://github.com/pkgforge-dev/vcmi-AppImage)                                                                    |
@@ -203,9 +221,15 @@ For more useful documentation about Anylinux-AppImages, see the pages below:
 [virt-manager](https://github.com/pkgforge-dev/virt-manager-AppImage)                                                    |
 [Warp](https://github.com/pkgforge-dev/Warp-AppImage)                                                                    |
 [Webcamoid](https://github.com/pkgforge-dev/Webcamoid-AppImage)                                                          |
+[WebCord](https://github.com/pkgforge-dev/WebCord-AppImage-Enhanced)                                                     |
+[WhatsDesk](https://github.com/pkgforge-dev/WhatsDesk-AppImage)                                                          |
 [wine](https://github.com/pkgforge-dev/wine-AppImage)                                                                    |
+[wipEout-Rewrite](https://github.com/pkgforge-dev/wipEout-Rewrite-AppImage)                                              |
+[Xash3D-FWGS](https://github.com/pkgforge-dev/Xash3D-FWGS-AppImage-Enhanced)                                             |
 [xenia-canary](https://github.com/pkgforge-dev/xenia-canary-AppImage)                                                    |
 [xoreos](https://github.com/pkgforge-dev/xoreos-AppImage)                                                                |
+[Ymir](https://github.com/pkgforge-dev/Ymir-AppImage)                                                                    |
+[ZapZap](https://github.com/pkgforge-dev/ZapZap-AppImage-Enhanced)                                                       |
 [Zenity](https://github.com/pkgforge-dev/Zenity-GTK3-AppImage)                                                           |
 
 ---
