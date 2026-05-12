@@ -1,16 +1,14 @@
 #!/bin/sh
 set -e
-# Script that disables unbuntu's nonsense of restricting namespaces
-# This is mostly needed by web browsers and electorn apps
-# Also if you have an application that uses bubblewrap internally
+# Alternative to upstream fix-namespaces.hook that adds an app-specific profile instead of disabling user namespaces globally.
+# Major drawback is that this has to be re-done every time the users renames or moves the appimage.
+# Since Tauri+CEF apps cannot work without this, I removed the "remember decision" logic.
 
 _userns_check_msg="
-unprivileged user-namespaces are disabled!
+Unprivileged user-namespaces are disabled but required for Chromium!
 
-Unprivileged user-namespaces are required to use this application.
-
-Certain Linux distributions like Ubuntu since v24.04 and secureblue disable unprivileged user-namespaces by default due to safety concerns.
-This is what prevents the applications to utilize sandboxing.
+Certain Linux distributions like Ubuntu 24.04+ disable unprivileged user-namespaces by default due to safety concerns.
+This is what prevents applications to utilize sandboxing.
 Unprivileged user-namespaces are safe and a vital part of the security model of all web browsers, flatpak, electron apps, etc.
 
 For more details, see: https://github.com/pkgforge-dev/Anylinux-AppImages/blob/main/useful-tools/fix-namespaces.md#why
@@ -19,18 +17,11 @@ _userns_check_msg_no_fix="$_userns_check_msg
 We do not have an automated way to enable unprivileged user-namespaces for your Linux distribution at the moment, so you will have to enable those manually.
 "
 _userns_check_msg_with_fix="$_userns_check_msg
-To fix this issue, I will need a permission to disable this restriction, like all the other Linux distributions do and several Ubuntu forks had to undo.
-"
-_userns_check_msg_apparmor="$_userns_check_msg_with_fix
-If you later wish to undo this change, remove: '/etc/sysctl.d/20-fix-namespaces.conf'
-and then run 'sysctl -w kernel.apparmor_restrict_unprivileged_userns=1' or reboot.
-"
-_userns_check_msg_secureblue="$_userns_check_msg_with_fix
-If you later wish to undo this change, run this command: 'ujust set-unconfined-userns off'.
-Changes are immediate, there is no need to reboot.
-"
+To fix this issue, we can add an exception profile to AppArmor, like all chromium-based browser have.
+This profile has to be updated every time you move or rename the AppImage.
 
-_disable_namespace_check=$CACHEDIR/.disable-namespaces-check
+Do you want to proceed?
+"
 
 _is_userns_possible() {
 	unshare --help 2>&1 | grep -q -- '--user'
@@ -45,26 +36,28 @@ _check_userns() {
 
 _is_apparmor() {
 	sysctl -a | grep -q -m 1 'kernel.apparmor_restrict_unprivileged_userns.*1'
-
-}
-
-_is_secureblue() {
-	ujust | grep -q -m 1 'set-unconfined-userns'
 }
 
 _fix_userns() {
+	if [ -z "$APPIMAGE" ]; then
+		notify -di "$_userns_check_msg_no_fix"
+		return 1
+	fi
 	if _is_apparmor 2>/dev/null; then
-		if notify -dq "$_userns_check_msg_apparmor"; then
+		if notify -dq "$_userns_check_msg_with_fix"; then
 			run_gui_sudo /bin/sh -c "
-			  echo 'kernel.apparmor_restrict_unprivileged_userns = 0' \
-			  | tee /etc/sysctl.d/20-fix-namespaces.conf
-			  sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+			  echo 'abi <abi/4.0>,
+include <tunables/global>
+
+profile "$MAIN_BIN"-appimage "$APPIMAGE" flags=(unconfined) {
+  userns,
+
+  # Site-specific additions and overrides. See local/README for details.
+  include if exists <local/"$MAIN_BIN"-appimage>
+}' \
+			  | tee /etc/apparmor.d/"$MAIN_BIN"-appimage
+			  apparmor_parser --replace --write-cache --skip-read-cache /etc/apparmor.d/"$MAIN_BIN"-appimage
 			"
-			return 0
-		fi
-	elif _is_secureblue 2>/dev/null; then
-		if notify -dq "$_userns_check_msg_secureblue"; then
-			ujust set-unconfined-userns on
 			return 0
 		fi
 	else
@@ -73,18 +66,10 @@ _fix_userns() {
 	return 1
 }
 
-_do_not_ask_again() {
-	if notify -dq "Do you wish to not see this message again?"; then
-		mkdir -p "$CACHEDIR"
-		:> "$_disable_namespace_check"
-	fi
-}
-
 check_and_fix_userns() {
-	if [ ! -f "$_disable_namespace_check" ] && _is_userns_possible; then
-		_check_userns || _fix_userns || _do_not_ask_again
+	if _is_userns_possible; then
+		_check_userns || _fix_userns
 	fi
 }
 
 check_and_fix_userns || :
-
